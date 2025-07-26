@@ -1,0 +1,9 @@
+langchain
+langchain-openai
+langchain-pinecone
+pinecone-client
+PyPDF2
+tiktoken
+python-dotenv
+streamlit
+supabase 
