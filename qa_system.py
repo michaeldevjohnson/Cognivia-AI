@@ -15,28 +15,105 @@ class QASystem:
         self.vector_store = vector_store
         self.llm = ChatOpenAI(
             model="gpt-3.5-turbo",
-            temperature=0,
+            temperature=Config.TEMPERATURE,
+            max_tokens=Config.MAX_TOKENS,
             openai_api_key=Config.OPENAI_API_KEY
         )
         
         self.current_memory = None
         self.current_session_id = None
         self.conversational_chain = None
+        
+        # RAG optimization settings from config
+        self.similarity_threshold = Config.SIMILARITY_THRESHOLD
+        self.max_documents = Config.MAX_DOCUMENTS_PER_QUERY
 
-    def ask_question(self, question: str, k: int = 5) -> Dict[str, Any]:
-        try:
-            retriever = self.vector_store.vector_store.as_retriever(search_kwargs={"k": k})
-            
-            custom_prompt = PromptTemplate(
-                input_variables=["context", "question"],
-                template="""Use the following pieces of context to answer the question at the end. 
-If you don't know the answer based on the context, just say that you don't know.
+    def _create_strict_prompt(self) -> PromptTemplate:
+        """Create a strict prompt that ensures document-based responses only"""
+        return PromptTemplate(
+            input_variables=["context", "question"],
+            template="""You are a helpful AI assistant that answers questions STRICTLY based on the provided document context. 
 
+IMPORTANT RULES:
+1. ONLY use information from the provided context below
+2. If the context doesn't contain enough information to answer the question, respond with: "I don't have enough information in the provided documents to answer this question."
+3. Do NOT use any external knowledge or general information
+4. Always cite which document(s) your answer comes from
+5. Be specific and accurate based on the document content
+6. If asked about topics not covered in the documents, clearly state that the information is not available in the provided documents
+
+CONTEXT FROM DOCUMENTS:
 {context}
 
-Question: {question}
-Answer:"""
-            )
+QUESTION: {question}
+
+ANSWER (based only on the provided context):"""
+        )
+
+    def _create_conversational_prompt(self) -> PromptTemplate:
+        """Create a conversational prompt for chat-based interactions"""
+        return PromptTemplate(
+            input_variables=["context", "question", "chat_history"],
+            template="""You are a helpful AI assistant that maintains conversations about documents. Answer questions STRICTLY based on the provided document context.
+
+IMPORTANT RULES:
+1. ONLY use information from the provided document context
+2. Consider the conversation history for context, but still answer based on documents only
+3. If the documents don't contain the information, say: "I don't have that information in the provided documents."
+4. Maintain a friendly, conversational tone while staying factual
+5. Reference previous parts of the conversation when relevant
+6. Always ground your answers in the document content
+
+CONVERSATION HISTORY:
+{chat_history}
+
+DOCUMENT CONTEXT:
+{context}
+
+CURRENT QUESTION: {question}
+
+ANSWER (based only on document context):"""
+        )
+
+    def _filter_relevant_documents(self, documents: List[Document], query: str) -> List[Document]:
+        """Filter documents based on relevance and similarity scores"""
+        if not documents:
+            return []
+        
+        # Get similarity scores for filtering
+        try:
+            scored_docs = self.vector_store.vector_store.similarity_search_with_score(query, k=len(documents))
+            relevant_docs = []
+            
+            for doc, score in scored_docs:
+                # Lower scores indicate higher similarity in most vector stores
+                if score <= (1.0 - self.similarity_threshold):
+                    relevant_docs.append(doc)
+                    
+            return relevant_docs if relevant_docs else documents[:3]  # Fallback to top 3
+            
+        except Exception as e:
+            logger.warning(f"Could not filter by similarity score: {e}")
+            return documents[:5]  # Return top 5 as fallback
+
+    def ask_question(self, question: str, k: int = None) -> Dict[str, Any]:
+        try:
+            if k is None:
+                k = self.max_documents
+            retriever = self.vector_store.vector_store.as_retriever(search_kwargs={"k": k})
+            
+            # Get documents and filter for relevance
+            retrieved_docs = retriever.get_relevant_documents(question)
+            relevant_docs = self._filter_relevant_documents(retrieved_docs, question)
+            
+            if not relevant_docs:
+                return {
+                    "question": question,
+                    "answer": "I don't have enough relevant information in the provided documents to answer this question.",
+                    "source_documents": []
+                }
+            
+            custom_prompt = self._create_strict_prompt()
 
             from langchain.chains import RetrievalQA
             qa_chain = RetrievalQA.from_chain_type(
@@ -49,9 +126,14 @@ Answer:"""
 
             result = qa_chain.invoke({"query": question})
             
+            # Validate that the response is document-based
+            answer = result["result"]
+            if self._is_generic_response(answer):
+                answer = "I don't have specific information about this in the provided documents. Please ask about content that's covered in your uploaded PDFs."
+            
             response = {
                 "question": question,
-                "answer": result["result"],
+                "answer": answer,
                 "source_documents": []
             }
 
@@ -60,7 +142,8 @@ Answer:"""
                     "chunk_index": i,
                     "content": doc.page_content,
                     "metadata": doc.metadata,
-                    "source_file": doc.metadata.get("source", "Unknown")
+                    "source_file": doc.metadata.get("source", "Unknown"),
+                    "page": doc.metadata.get("page", "Unknown")
                 }
                 response["source_documents"].append(source_info)
 
@@ -71,10 +154,21 @@ Answer:"""
             logger.error(f"Error answering question: {e}")
             raise
 
+    def _is_generic_response(self, answer: str) -> bool:
+        """Check if response seems too generic or not document-based"""
+        generic_indicators = [
+            "in general", "typically", "usually", "commonly", 
+            "it's important to", "you should", "it's recommended",
+            "generally speaking", "as a rule"
+        ]
+        answer_lower = answer.lower()
+        return any(indicator in answer_lower for indicator in generic_indicators)
+
     def search_documents(self, query: str, k: int = 5, with_scores: bool = False) -> List[Dict[str, Any]]:
         try:
             documents = self.vector_store.search_documents(query, k=k, with_scores=with_scores)
             
+            result_docs = []
             for doc in documents:
                 doc_info = {
                     "content": doc["content"],
@@ -83,9 +177,9 @@ Answer:"""
                 }
                 if with_scores and "similarity_score" in doc:
                     doc_info["similarity_score"] = doc["similarity_score"]
-                    documents.append(doc_info)
+                result_docs.append(doc_info)
             
-            return documents
+            return result_docs
             
         except Exception as e:
             logger.error(f"Error searching documents: {e}")
@@ -96,13 +190,17 @@ Answer:"""
         self.current_session_id = actual_session_id
         
         retriever = self.vector_store.vector_store.as_retriever()
-        retriever.search_kwargs = {"k": 5}
+        retriever.search_kwargs = {"k": self.max_documents}
+        
+        # Create conversational chain with custom prompt
+        custom_prompt = self._create_conversational_prompt()
         
         self.conversational_chain = ConversationalRetrievalChain.from_llm(
             llm=self.llm,
             retriever=retriever,
             return_source_documents=True,
-            verbose=True
+            verbose=True,
+            combine_docs_chain_kwargs={"prompt": custom_prompt}
         )
         
         return self.current_session_id
@@ -127,13 +225,18 @@ Answer:"""
             
             result = self.conversational_chain.invoke(inputs)
             
+            # Validate response is document-based
+            answer = result["answer"]
+            if self._is_generic_response(answer):
+                answer = "I don't have specific information about this in the provided documents. Please ask about content that's covered in your uploaded PDFs."
+            
             from langchain_core.messages import HumanMessage, AIMessage
             self.current_memory.chat_memory.add_message(HumanMessage(content=question))
-            self.current_memory.chat_memory.add_message(AIMessage(content=result["answer"]))
+            self.current_memory.chat_memory.add_message(AIMessage(content=answer))
             
             response = {
                 "question": question,
-                "answer": result["answer"],
+                "answer": answer,
                 "session_id": self.current_session_id,
                 "source_documents": []
             }
@@ -143,7 +246,8 @@ Answer:"""
                     "chunk_index": i,
                     "content": doc.page_content,
                     "metadata": doc.metadata,
-                    "source_file": doc.metadata.get("source", "Unknown")
+                    "source_file": doc.metadata.get("source", "Unknown"),
+                    "page": doc.metadata.get("page", "Unknown")
                 }
                 response["source_documents"].append(source_info)
             

@@ -1,4 +1,4 @@
-# 🔍 AI PDF Search Engine
+# 🔍 Cognivia AI
 
 [![Python](https://img.shields.io/badge/language-Python-blue.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](https://www.python.org/)
@@ -42,29 +42,38 @@ A powerful AI-powered PDF search and question-answering system that leverages cu
   - Intelligent document metadata preservation
   - OCR support for scanned documents
 
+- **Optimized RAG (Retrieval-Augmented Generation)**
+  - **Document-Only Responses**: Strictly answers based on uploaded documents
+  - **Existing Document Support**: Automatically detects and works with pre-existing PDFs
+  - **Similarity Threshold Filtering**: Configurable relevance scoring
+  - **Generic Response Detection**: Prevents hallucination and general knowledge responses
+  - **Source Attribution**: Always cites document sources with page numbers
+  - **Context Validation**: Ensures answers are grounded in document content
+
 - **AI-Powered Question Answering**
-  - Natural language understanding
-  - Context-aware responses
-  - Multi-document correlation
-  - Source attribution with page numbers
+  - Natural language understanding with document constraints
+  - Context-aware responses from your PDFs only
+  - Multi-document correlation and analysis
+  - Intelligent "I don't know" responses when information isn't available
 
 - **Enterprise-Grade Vector Search**
-  - High-performance similarity matching
+  - High-performance similarity matching with thresholds
   - Scalable document indexing
   - Real-time search capabilities
-  - Configurable search parameters
+  - Configurable search parameters and document limits
 
 - **Smart Conversation Management**
-  - Persistent chat history
+  - Persistent chat history with Supabase
   - Context retention across sessions
-  - Conversation summarization
-  - Multi-user support
+  - Document-aware conversation flow
+  - Multi-user support with session isolation
 
-- **Modern Web Interface**
-  - Responsive design
-  - Dark/Light mode support
-  - Real-time updates
-  - Mobile-friendly layout
+- **Modern Chatbot Interface**
+  - **Chat Bubble Design**: WhatsApp-style message interface
+  - **Real-time Conversations**: Instant responses with typing indicators
+  - **Source Document Display**: Expandable source citations
+  - **Responsive Design**: Mobile-friendly chat experience
+  - **Document Status Tracking**: Upload progress and document counts
 
 ## 🏗️ Architecture
 
@@ -109,6 +118,7 @@ pip install -r requirements.txt
 Create `.env` file in the project root:
 
 ```env
+# Required API Keys
 OPENAI_API_KEY=your_openai_api_key_here
 PINECONE_API_KEY=your_pinecone_api_key_here
 PINECONE_INDEX_NAME=your_index_name
@@ -116,6 +126,16 @@ EMBEDDING_MODEL=text-embedding-3-small
 EMBEDDING_DIMENSION=512
 SUPABASE_URL=your_supabase_project_url
 SUPABASE_KEY=your_supabase_anon_key
+
+# RAG Optimization Settings (Optional)
+SIMILARITY_THRESHOLD=0.7          # Document relevance threshold (0.0-1.0)
+MAX_DOCUMENTS_PER_QUERY=5         # Maximum documents to retrieve
+LLM_TEMPERATURE=0                 # Response creativity (0.0-1.0)
+MAX_TOKENS=1000                   # Maximum response length
+
+# Chatbot Settings (Optional)
+MAX_CHAT_HISTORY=20               # Messages to keep in memory
+ENABLE_SOURCE_DISPLAY=true        # Show source documents
 ```
 
 ### 3. Setup Supabase Tables
@@ -134,6 +154,10 @@ The SQL file includes all necessary table definitions, indexes, and security pol
 ### 4. Run Application
 
 ```bash
+# Option 1: Use the runner script (recommended)
+python run_app.py
+
+# Option 2: Run directly with Streamlit
 # Make sure your virtual environment is activated
 # For Windows
 .\venv\Scripts\activate
@@ -145,7 +169,19 @@ source venv/bin/activate
 streamlit run app.py
 ```
 
-### 5. Deactivating Virtual Environment
+### 5. Test the System
+
+Run the test scripts to verify functionality:
+
+```bash
+# Test that the system only responds based on documents
+python test_optimized_rag.py
+
+# Demo working with existing documents (if any)
+python demo_existing_docs.py
+```
+
+### 6. Deactivating Virtual Environment
 
 When you're done working on the project, you can deactivate the virtual environment:
 
@@ -173,13 +209,23 @@ ai-pdf-search-engine/
 
 ## 💡 Advanced Configuration
 
+### RAG Optimization
+
+```python
+# Fine-tune document retrieval and response quality
+SIMILARITY_THRESHOLD = 0.7     # Higher = more strict document relevance
+MAX_DOCUMENTS_PER_QUERY = 5    # More documents = better context, slower response
+LLM_TEMPERATURE = 0            # 0 = deterministic, 1 = creative responses
+MAX_TOKENS = 1000              # Longer responses vs. faster generation
+```
+
 ### Performance Tuning
 
 ```python
 # config.py
 CHUNK_SIZE = 1000          # Adjust based on document complexity
 CHUNK_OVERLAP = 200        # Increase for better context preservation
-MAX_DOCUMENTS = 100        # Limit concurrent documents
+MAX_CHAT_HISTORY = 20      # Balance memory vs. performance
 CACHE_TTL = 3600          # Cache lifetime in seconds
 ```
 
@@ -208,6 +254,12 @@ CACHE_TTL = 3600          # Cache lifetime in seconds
    - Clear browser cache
    - Restart application
    - Check Supabase connection
+
+4. **Existing Documents Not Found**
+   - Verify correct Pinecone index name in .env
+   - Check if using different API keys
+   - Run `python demo_existing_docs.py` to diagnose
+   - Use "Refresh Documents" button in the app
 
 ## 🤝 Contributing
 

@@ -87,6 +87,27 @@ class PDFSearchEngine:
     def get_stats(self) -> Dict[str, Any]:
         return self.vector_store.get_stats()
 
+    def check_existing_documents(self) -> Dict[str, Any]:
+        """Check for existing documents in the vector store"""
+        try:
+            stats = self.get_stats()
+            sources = self.vector_store.get_document_sources()
+            
+            return {
+                "has_documents": stats.get("has_documents", False),
+                "total_vectors": stats.get("total_vectors", 0),
+                "document_sources": sources,
+                "document_count": len(sources)
+            }
+        except Exception as e:
+            logger.error(f"Error checking existing documents: {e}")
+            return {
+                "has_documents": False,
+                "total_vectors": 0,
+                "document_sources": [],
+                "document_count": 0
+            }
+
     def clear_all_documents(self):
         self.vector_store.delete_documents()
         logger.info("All documents cleared from vector store")

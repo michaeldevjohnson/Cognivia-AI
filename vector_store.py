@@ -20,7 +20,8 @@ class VectorStore:
         self.vector_store = self._initialize_vector_store()
 
     def _initialize_vector_store(self):
-        if self.index_name not in self.pc.list_indexes().names():
+        existing_indexes = [index.name for index in self.pc.list_indexes()]
+        if self.index_name not in existing_indexes:
             self.pc.create_index(
                 name=self.index_name,
                 dimension=Config.EMBEDDING_DIMENSION,
@@ -102,8 +103,33 @@ class VectorStore:
             return {
                 "total_vectors": stats.total_vector_count,
                 "dimension": stats.dimension,
-                "index_fullness": stats.index_fullness
+                "index_fullness": stats.index_fullness,
+                "has_documents": stats.total_vector_count > 0
             }
         except Exception as e:
             logger.error(f"Error getting stats: {e}")
-            return {"total_vectors": 0, "dimension": 0, "index_fullness": 0.0} 
+            return {"total_vectors": 0, "dimension": 0, "index_fullness": 0.0, "has_documents": False}
+
+    def get_document_sources(self) -> List[str]:
+        """Get list of unique document sources in the vector store"""
+        try:
+            # Query a few vectors to get metadata and extract unique sources
+            sample_results = self.vector_store.similarity_search("sample", k=50)
+            sources = set()
+            for doc in sample_results:
+                source = doc.metadata.get("source", "Unknown")
+                if source != "Unknown":
+                    sources.add(source)
+            return sorted(list(sources))
+        except Exception as e:
+            logger.warning(f"Could not retrieve document sources: {e}")
+            return []
+
+    def check_documents_exist(self) -> bool:
+        """Quick check if any documents exist in the vector store"""
+        try:
+            stats = self.get_stats()
+            return stats.get("has_documents", False)
+        except Exception as e:
+            logger.error(f"Error checking document existence: {e}")
+            return False 
