@@ -7,7 +7,7 @@
 [![Pinecone](https://img.shields.io/badge/Pinecone-Vector%20DB-blue)](https://www.pinecone.io/)
 [![Supabase](https://img.shields.io/badge/Supabase-Database-dark)](https://supabase.com/)
 
-A powerful AI-powered PDF search and question-answering system that leverages cutting-edge technologies to provide intelligent document analysis and natural language interactions.
+Cognivia AI leverages cutting-edge technologies to provide intelligent document analysis and natural language interactions.
 
 **Author:** Muhammad Husnain Ali
 
